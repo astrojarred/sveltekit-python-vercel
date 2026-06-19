@@ -69,11 +69,6 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
   ```json
   {
     "buildCommand": "node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs; vite build",
-    "functions": {
-      "api/**/*.py": {
-        "runtime": "@vercel/python@3.0.7"
-      }
-    },
     "routes": [
       {
         "src": "/api/(.*)",
@@ -87,45 +82,25 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
 
 ## Testing Locally
 
-Using [Poetry](https://python-poetry.org/) to manage your virtual environments with this package is recommended.
+Using [uv](https://docs.astral.sh/uv/) or [Poetry](https://python-poetry.org/) to manage your virtual environments with this package is recommended.
 
-- Run `poetry init` to create a new virtual environment, and follow the steps. Or simply create a `pyproject.toml` like the one below.
-
-  ```toml
-  [tool.poetry]
-  name = "sveltekit-python-example"
-  version = "0.1.0"
-  description = ""
-  authors = ["Your Name <email@gmail.com>"]
-  readme = "README.md"
-
-  [tool.poetry.dependencies]
-  python = "^3.9"
-  fastapi = "^0.95.2"
-  uvicorn = "^0.22.0"
-  
-  [tool.poetry.group.dev.dependencies]
-  watchfiles = "^0.19.0"
-
-  [build-system]
-  requires = ["poetry-core"]
-  build-backend = "poetry.core.masonry.api"
-  ```
-
+- Run `uv init` or `poetry init` to create a new virtual environment to create a `pyproject.toml`
 - Required packages are python3.9 (that is what Vercel's runtime uses), `fastapi`, and `uvicorn`.
-- Install whatever other dependencies you need from pypi using `poetry add package-name`
-
-- Enter your virtual env with `poetry shell`
-- Run `pnpm dev` or `npm dev`
-  - You should see both the usual SvelteKit server start as well as the unvicorn server (by default on `http://0.0.0.0:8000`) in the console.
+- Install whatever other dependencies you need from pypi using `poetry add package-name` or `uv add package-name`.
+- Run your `npm` or `pnpm` dev server within `uv` or `poetry`. For example:
+  - `uv run pnpm dev`
+  - `poetry run npm dev` etc
+- You should see both the usual SvelteKit server start as well as the unvicorn server (by default on `http://0.0.0.0:8000`) in the console.
 
 ## Deploying to Vercel
 
 - At the moment this requires a tiny bit of extra labor besides just pushing to your repository. I believe this is because of the way Vercel looks for serverless functions, but I hope to make this a bit easier in the future.
 
-- When you make changes to your python endpoints, you have to manually regenerate the `/api` folder by running:
+- When you make changes to your python endpoints, you have to manually regenerate the `/api` folder by running one of:
   1. `poetry export -f requirements.txt --output requirements.txt --without-hashes`
-  2. `node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs`
+  2. `uv pip compile pyproject.toml -o requirements.txt`
+- Followed by:
+  - node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs`
 - Then commit `requirements.txt` and the changes in `/api` and push.
 
 Note:
@@ -134,10 +109,11 @@ Note:
   ```json
   "scripts": {
     ...
-    "py-update": "poetry export -f requirements.txt --output requirements.txt --without-hashes; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs"
+    "py:poetry": "poetry export -f requirements.txt --output requirements.txt --without-hashes; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs",
+    "py:uv": "uv pip compile pyproject.toml -o requirements.txt; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs"
   }
   ```
-  - and then just run `pnpm py-update`
+  - and then just run `pnpm py:poetry` or `pnpm py:uv`
 
 ## Example
 
