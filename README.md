@@ -1,7 +1,7 @@
 <p align="middle">
 <img width="100" alt="image" src="https://user-images.githubusercontent.com/20548516/218344678-d41f4c4a-6b1b-48cc-8553-2b9fbe2169d6.png"/>
 <img width="100" alt="image" src="https://avatars.githubusercontent.com/u/1525981?s=200&v=4"/>
-<img width="100" alt="image" src="https://camo.githubusercontent.com/e40cb80a2b7078aaa29e48190c4d665cdfb0a56a0dc871638c7f81efbe230fdb/68747470733a2f2f6173736574732e76657263656c2e636f6d2f696d6167652f75706c6f61642f76313538383830353835382f7265706f7369746f726965732f76657263656c2f6c6f676f2e706e67"/>
+<img width="100" alt="image" src="https://avatars.githubusercontent.com/u/14985020?s=200&v=4"/>
 </p>
 
 # sveltekit-python-vercel
