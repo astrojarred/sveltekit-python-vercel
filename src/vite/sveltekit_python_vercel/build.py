@@ -1,6 +1,7 @@
 import argparse
-import shutil
 import glob
+import json
+import shutil
 
 from pathlib import Path, PurePosixPath
 
@@ -17,23 +18,38 @@ func_dir.mkdir(parents=True, exist_ok=True)
 if args.packagedir:
     shutil.copy(Path(args.packagedir).absolute() / "deploy.py", func_dir / "index.py")
 
-# Add all +server.py routes to web_app
-for module_path in glob.glob(str(root_dir / "src/routes/**/+server.py"), recursive=True):
+# find all +server.py routes and copy them into the .func directory
+manifest = []
 
-    api_route = func_dir / Path(module_path).absolute().relative_to(root_dir / "src/routes")
+for module_path in glob.glob(str(root_dir / "src/routes/**/+server.py"), recursive=True):
+    rel = Path(module_path).absolute().relative_to(root_dir / "src/routes")
 
     # replace square brackets with curly brackets
-    api_route = Path(str(api_route).replace("[", "{").replace("]", "}"))
+    rel = Path(str(rel).replace("[", "{").replace("]", "}"))
 
-    # remove any groups from the URL
-    api_route = Path(str(PurePosixPath(*[part for part in PurePosixPath(api_route).parts if not part.startswith("(") and not part.endswith(")")])))
+    # remove any SvteleKit groups from the URL
+    parts = [
+        p for p in PurePosixPath(rel).parts
+        if not (p.startswith("(") and p.endswith(")"))
+    ]
+    rel = Path(*parts)
 
-    if not api_route.parent.exists():
-        api_route.parent.mkdir(parents=True)
+    target_dir = func_dir / rel.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-    shutil.copy(module_path, api_route.parent)
+    shutil.copy(module_path, target_dir / rel.name)
 
-    if not (api_route.parent / "__init__.py").exists():
-        (api_route.parent / "__init__.py").touch()
+    if not (target_dir / "__init__.py").exists():
+        (target_dir / "__init__.py").touch()
 
-    print(f"PYTHON ENDPOINT: Copied {module_path} to {api_route.parent}")
+    # build the API route
+    parent = PurePosixPath(rel).parent
+    if str(parent) == ".":
+        api_route = "/api"
+    else:
+        api_route = "/api/" + str(parent)
+
+    manifest.append({"file": str(PurePosixPath(rel)), "route": api_route})
+    print(f"PYTHON ENDPOINT: {module_path} → {api_route}")
+
+(func_dir / "_manifest.json").write_text(json.dumps(manifest, indent=2))
