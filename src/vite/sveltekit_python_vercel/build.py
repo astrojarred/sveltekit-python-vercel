@@ -94,3 +94,27 @@ elif (func_dir / "pyproject.toml").exists():
 vc_config = {"runtime": "python3.12", "handler": "index.handler"}
 (func_dir / ".vc-config.json").write_text(json.dumps(vc_config, indent=2))
 print("PYTHON ENDPOINT: Created .vc-config.json")
+
+# patch the SvelteKit config.json that the endpoints are rerouted to python
+config_path = root_dir / ".vercel" / "output" / "config.json"
+if config_path.exists():
+    config = json.loads(config_path.read_text())
+    routes = config.get("routes", [])
+
+    python_route = {"src": "^/api(/.*)?$", "dest": "api/index"}
+
+    # routes /api/* to python before SvelteKit catches it
+    fs_idx = next(
+        (i for i, r in enumerate(routes) if r.get("handle") == "filesystem"),
+        0,
+    )
+    routes.insert(fs_idx, python_route)
+    config["routes"] = routes
+
+    config_path.write_text(json.dumps(config, indent=2))
+    print("PYTHON ENDPOINT: Patched .vercel/output/config.json")
+else:
+    print(
+        "WARNING: .vercel/output/config.json not found. "
+        "Make sure to run `vite build` before this script."
+    )
