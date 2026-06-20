@@ -89,3 +89,8 @@ elif (func_dir / "pyproject.toml").exists():
     if _deps_list:
         subprocess.run(pip_cmd + _deps_list, check=True)
         print(f"PYTHON ENDPOINT: Installed {len(_deps_list)} deps from pyproject.toml")
+
+# python3.12 is the AWS Lambda runtime string
+vc_config = {"runtime": "python3.12", "handler": "index.handler"}
+(func_dir / ".vc-config.json").write_text(json.dumps(vc_config, indent=2))
+print("PYTHON ENDPOINT: Created .vc-config.json")
