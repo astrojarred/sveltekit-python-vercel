@@ -53,3 +53,17 @@ for module_path in glob.glob(str(root_dir / "src/routes/**/+server.py"), recursi
     print(f"PYTHON ENDPOINT: {module_path} → {api_route}")
 
 (func_dir / "_manifest.json").write_text(json.dumps(manifest, indent=2))
+
+# bundle the dependency file here
+dep_files = ["requirements.txt", "pyproject.toml", "uv.lock", "Pipfile", "Pipfile.lock"]
+found_dep = False
+for dep_file in dep_files:
+    src = root_dir / dep_file
+    if src.exists():
+        shutil.copy(src, func_dir / dep_file)
+        print(f"PYTHON ENDPOINT: Bundled {dep_file}")
+        found_dep = True
+
+if not found_dep:
+    (func_dir / "requirements.txt").write_text("fastapi\nuvicorn\n")
+    print("PYTHON ENDPOINT: No dependency file found, created minimal requirements.txt")
