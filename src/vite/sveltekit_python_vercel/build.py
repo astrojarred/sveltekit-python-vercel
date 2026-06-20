@@ -2,7 +2,8 @@ import argparse
 import glob
 import json
 import shutil
-
+import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 
 parser = argparse.ArgumentParser(description="Run SvelteKit Python Deployment")
@@ -67,3 +68,24 @@ for dep_file in dep_files:
 if not found_dep:
     (func_dir / "requirements.txt").write_text("fastapi\nuvicorn\n")
     print("PYTHON ENDPOINT: No dependency file found, created minimal requirements.txt")
+
+# pre-install Python packages into _deps/ so they are available in the lambda env
+dep_dir = func_dir / "_deps"
+dep_dir.mkdir(exist_ok=True)
+pip_cmd = [sys.executable, "-m", "pip", "install", "--target", str(dep_dir), "--quiet"]
+if (func_dir / "requirements.txt").exists():
+    pip_cmd += ["-r", str(func_dir / "requirements.txt")]
+    subprocess.run(pip_cmd, check=True)
+    print("PYTHON ENDPOINT: Installed deps from requirements.txt")
+elif (func_dir / "pyproject.toml").exists():
+    # extract dependencies from pyproject.toml
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib  # type: ignore
+    with open(func_dir / "pyproject.toml", "rb") as _f:
+        _pyproject = tomllib.load(_f)
+    _deps_list = _pyproject.get("project", {}).get("dependencies", [])
+    if _deps_list:
+        subprocess.run(pip_cmd + _deps_list, check=True)
+        print(f"PYTHON ENDPOINT: Installed {len(_deps_list)} deps from pyproject.toml")
