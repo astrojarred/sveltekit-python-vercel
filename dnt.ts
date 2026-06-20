@@ -81,3 +81,8 @@ await copy(
   "src/vite/sveltekit_python_vercel",
   "npm/esm/src/vite/sveltekit_python_vercel"
 );
+
+await Deno.writeTextFile(
+  "npm/.npmignore",
+  "/src/\ntest_runner.js\nyarn.lock\npnpm-lock.yaml\n",
+);
