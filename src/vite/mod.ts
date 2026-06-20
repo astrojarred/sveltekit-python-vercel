@@ -113,40 +113,7 @@ export async function sveltekit_python_vercel(
     name: "vite-plugin-sveltekit_python-build",
     apply: "build",
     async configResolved(config) {
-      console.log("PY: BUILD DEBUG");
-
       console.log("PY: ROOT PATH: " + config.root);
-      console.log(
-        "PY: LOADED VERCEL URL: " + loadEnv("", config.root, "").VERCEL_URL
-      );
-
-      const packagelocation = path.join(
-        config.root,
-        "node_modules",
-        "sveltekit-python-vercel",
-        "esm/src/vite"
-      );
-
-      console.log("PY: PACKAGE LOCATION: " + packagelocation);
-
-      const python_path = opts.python_path ?? (await which("python3"));
-      await run$`cd ${packagelocation}`;
-      await run$`${python_path} ${packagelocation}/sveltekit_python_vercel/build.py --root ${config.root}`;
-
-      // check if env var starts with http
-      let httpPrefix = "";
-      if (!loadEnv("", config.root, "").VERCEL_URL.startsWith("http")) {
-        httpPrefix = "https://";
-      }
-
-      const api_url = path.join(
-        httpPrefix + loadEnv("", config.root, "").VERCEL_URL
-      );
-
-      // get current Vercel deploy URL
-      sveltekit_url = new URL(api_url);
-
-      console.log("PY: Build API URL: " + sveltekit_url.toString());
     },
   };
 
