@@ -22,7 +22,7 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
 ## Current Features
 
 - Write `+server.py` files nearly the same way you would write `+server.js` files
-- Deploy (quasi) automatically to Vercel Serverless
+- Deploy automatically to Vercel Serverless (Python 3.12 runtime)
 
 ## Installing
 
@@ -36,17 +36,15 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
   import { sveltekit } from "@sveltejs/kit/vite";
   import { sveltekit_python_vercel } from "sveltekit-python-vercel/vite";
 
-  export default defineConfig(({ command, mode }) => {
-    return {
-      plugins: [sveltekit_python_vercel(), sveltekit()],
-    };
+  export default defineConfig({
+    plugins: [sveltekit(), ...(await sveltekit_python_vercel())],
   });
   ```
 
 - Update your `svelte.config.js`:
 
   ```javascript
-  import adapter from "@sveltejs/adapter-vercel"; // Use the vercel adapter
+  import adapter from "@sveltejs/adapter-vercel";
   import { vitePreprocess } from "@sveltejs/kit/vite";
 
   /** @type {import('@sveltejs/kit').Config} */
@@ -63,18 +61,12 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
 
 - Update your `vercel.json`
 
-  - The build command prepares all your endpoints and copies them to the `/api` directory where Vercel looks for functions
-  - Functions and Routes tell Vercel how to run and redirect function calls
+  - The build command first runs `vite build` (which generates `.vercel/output/` via the SvelteKit adapter), then runs our script to write the Python function into that same output directory and patch the routing config.
+  - No `routes` or `functions` keys are needed — routing is handled automatically via the [Vercel Build Output API](https://vercel.com/docs/build-output-api/v3).
 
   ```json
   {
-    "buildCommand": "node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs; vite build",
-    "routes": [
-      {
-        "src": "/api/(.*)",
-        "dest": "api/index.py"
-      }
-    ]
+    "buildCommand": "vite build; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs"
   }
   ```
 
@@ -82,93 +74,59 @@ Write Python endpoints in [SvelteKit](https://kit.svelte.dev/) and seamlessly de
 
 ## Testing Locally
 
-Using [uv](https://docs.astral.sh/uv/) or [Poetry](https://python-poetry.org/) to manage your virtual environments with this package is recommended.
+[uv](https://docs.astral.sh/uv/) is recommended for managing your Python environment.
 
-- Run `uv init` or `poetry init` to create a new virtual environment to create a `pyproject.toml`
-- Required packages are python3.9 (that is what Vercel's runtime uses), `fastapi`, and `uvicorn`.
-- Install whatever other dependencies you need from pypi using `poetry add package-name` or `uv add package-name`.
-- Run your `npm` or `pnpm` dev server within `uv` or `poetry`. For example:
+- Run `uv init --python 3.12` to create a `pyproject.toml` pinned to Python 3.12 (the same version Vercel's runtime uses).
+- Add the required packages: `uv add fastapi uvicorn`
+- Add any other dependencies you need: `uv add numpy pandas ...`
+- Run your dev server inside uv:
   - `uv run pnpm dev`
-  - `poetry run npm dev` etc
-- You should see both the usual SvelteKit server start as well as the unvicorn server (by default on `http://0.0.0.0:8000`) in the console.
+- You should see both the usual SvelteKit server start and the uvicorn server (by default on `http://0.0.0.0:8000`) in the console.
 
 ## Deploying to Vercel
 
-- At the moment this requires a tiny bit of extra labor besides just pushing to your repository. I believe this is because of the way Vercel looks for serverless functions, but I hope to make this a bit easier in the future.
+Just push to your repository — no extra steps required.
 
-- When you make changes to your python endpoints, you have to manually regenerate the `/api` folder by running one of:
-  1. `poetry export -f requirements.txt --output requirements.txt --without-hashes`
-  2. `uv pip compile pyproject.toml -o requirements.txt`
-- Followed by:
-  - node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs`
-- Then commit `requirements.txt` and the changes in `/api` and push.
-
-Note:
-
-- To make this a bit smoother, you can add a script to you `package.json`:
-  ```json
-  "scripts": {
-    ...
-    "py:poetry": "poetry export -f requirements.txt --output requirements.txt --without-hashes; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs",
-    "py:uv": "uv pip compile pyproject.toml -o requirements.txt; node ./node_modules/sveltekit-python-vercel/esm/src/vite/sveltekit_python_vercel/bin.mjs"
-  }
-  ```
-  - and then just run `pnpm py:poetry` or `pnpm py:uv`
+- The `buildCommand` in `vercel.json` handles everything automatically:
+  1. `vite build` runs the SvelteKit build and writes `.vercel/output/` via `@sveltejs/adapter-vercel`
+  2. `bin.mjs` then writes your Python endpoints into `.vercel/output/functions/` using the [Build Output API](https://vercel.com/docs/build-output-api/v3) and patches the routing config
+- Your `+server.py` files and dependency declarations (`requirements.txt`, `pyproject.toml`, `Pipfile`, etc.) are bundled automatically — there is no need to commit an `/api` folder or manually generate a `requirements.txt`.
+- Python packages are pre-installed into the function bundle at build time using `pip install --target`, so they are available in Vercel's raw Python 3.12 Lambda environment without any extra configuration.
 
 ## Example
 
 - Frontend: `/src/routes/py/+page.svelte`
 
   ```html
-  <script lang="ts">
-    let a = 0;
-    let b = 0;
-    let total = 0;
+  <script>
+    let a = $state(0);
+    let b = $state(0);
+    let total = $state(0);
 
     async function pyAddPost() {
-      const response = await fetch("/py", {
+      const res = await fetch("/py", {
         method: "POST",
         body: JSON.stringify({ a, b }),
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
       });
-      let res = await response.json();
-      total = res.sum;
+      total = (await res.json()).sum;
     }
 
     async function pyAddGet() {
-      const response = await fetch(`/py?a=${a}&b=${b}`, {
-        method: "GET",
-        headers: {
-          "content-type": "application/json",
-        },
-      });
-
-      let res = await response.json();
-      total = res.sum;
+      const res = await fetch(`/py?a=${a}&b=${b}`);
+      total = (await res.json()).sum;
     }
   </script>
 
-  <h1>This is a SvelteKit page with a python backend.</h1>
+  <h1>SvelteKit page with a Python backend</h1>
 
-  <h3>POST Example</h3>
-  <form>
-    <input type="number" name="a" placeholder="Number 1" bind:value="{a}" />
-    <input type="number" name="b" placeholder="Number 2" bind:value="{b}" />
-    <button on:click|preventDefault="{pyAddPost}">Add</button>
-  </form>
-  <h4>Total: {total}</h4>
+  <label>a: <input type="number" bind:value={a} /></label>
+  <label>b: <input type="number" bind:value={b} /></label>
 
-  <br />
+  <button type="button" onclick={pyAddPost}>POST</button>
+  <button type="button" onclick={pyAddGet}>GET</button>
 
-  <h3>GET Example</h3>
-  <form>
-    <input type="number" name="a" placeholder="Number 1" bind:value="{a}" />
-    <input type="number" name="b" placeholder="Number 2" bind:value="{b}" />
-    <button on:click|preventDefault="{pyAddGet}">Add</button>
-  </form>
-  <h4>Total: {total}</h4>
+  <p>Total: {total}</p>
   ```
 
 - Backend: `/src/routes/py/+server.py`
@@ -188,17 +146,12 @@ Note:
 
   async def GET(a: float, b: float):
       return {"sum": a + b}
-
   ```
 
 ### Backend Caveats
 
-There are currently a few things that have to be worked around.
-
-- `GET` endpoints are directly fed the parameters from the url, so when you define an endpoint
-- All other endpoints are fed the body as a JSON. The recommended way to deal with this is to use a pydantic model and pass it as the singular input to the function.
-
-See the example above.
+- `GET` endpoints receive query parameters directly as function arguments. Type annotations are used for coercion (e.g. `a: float` parses `?a=3` as `3.0`).
+- All other HTTP methods receive the request body as JSON. The recommended pattern is a Pydantic model as the single argument — FastAPI handles validation and parsing automatically.
 
 ## Fork of `sveltekit-modal`
 
@@ -207,8 +160,8 @@ Check out the awesome [sveltekit-modal](https://github.com/semicognitive/sveltek
 ## Possible future plans
 
 - [X] Add hot reloading in dev mode
-- [ ] Generate endpoints (/api folder) automatically during build
-  - [ ] Auto create requirements.txt from pyproject.toml (both related to vercel functions being checked/handled before build)
+- [X] Generate endpoints automatically during build (via Vercel Build Output API)
+  - [X] Auto-bundle requirements.txt / pyproject.toml / Pipfile at build time
 - [ ] Add form actions
 - [ ] Add load functions
-- [ ] Add helper functions to automatically call API endpoints in project\
+- [ ] Add helper functions to automatically call API endpoints in project
