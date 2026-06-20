@@ -22,7 +22,7 @@ await build({
   shims: {},
   package: {
     name: denoconfig.package.name,
-    version: Deno.args[0],
+    version: Deno.args[0].replace(/^v/, ""),
     description: denoconfig.package.description,
     repository: {
       type: "git",
