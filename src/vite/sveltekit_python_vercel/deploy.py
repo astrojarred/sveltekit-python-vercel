@@ -1,9 +1,7 @@
-import glob
-import importlib
 import importlib.util
-import os
+import json
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 _base = Path(__file__).parent
 _deps = _base / "_deps"
@@ -17,43 +15,35 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-async def hello_world():
-    return {"message": "Hello World!"}
 
-app.add_api_route("/api", hello_world, methods=["GET"])
+def _load_module(file_path: Path):
+    spec = importlib.util.spec_from_file_location("_route_module", file_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
-# Add all +server.py routes to web_app
-for module_path in glob.glob('./**/+server.py', recursive=True):
 
-    module_name_joined = module_path[2:].replace(os.path.sep, '.')
-    module_name, module_package = module_name_joined.rsplit('.', maxsplit=1)
-    
-    api_route = module_path[1:] if module_path.startswith('./') else module_path
-    api_route = str(Path(api_route).parent)
-    
-    # Replace square brackets with curly brackets
-    api_route = api_route.replace('[', '{').replace(']', '}')
-    
-    # remove any groups from the URL
-    api_route = str(PurePosixPath(*[part for part in PurePosixPath(api_route).parts if not part.startswith("(") and not part.endswith(")")]))
+_manifest_path = _base / "_manifest.json"
+if _manifest_path.exists():
+    for _entry in json.loads(_manifest_path.read_text()):
+        _mod = _load_module(_base / _entry["file"])
+        _route = _entry["route"]
 
-    mod = importlib.import_module(module_name, module_package)
-    
-    # Add endpoints
-    for method in ["GET", "POST", "PATCH", "PUT", "DELETE"]:
-        
-        # Check for duplicate methods
-        if hasattr(mod, method) and hasattr(mod, method.lower()):
-            raise Exception(
-                f"Duplicate method {method} and {method.lower()} in {api_route}"
-            )
-            
-        elif hasattr(mod, method):
-            app.add_api_route(api_route, getattr(mod, method), methods=[method])
-            print(f"PYTHON ENDPOINT: Added {module_path} [{method}] at {api_route}")
-        elif hasattr(mod, method.lower()):
-            app.add_api_route(api_route, getattr(mod, method.lower()), methods=[method])
-            print(f"PYTHON ENDPOINT: Added {module_path} [{method}] at {api_route}")
+        for _method in ["GET", "POST", "PATCH", "PUT", "DELETE"]:
+            _has_upper = hasattr(_mod, _method)
+            _has_lower = hasattr(_mod, _method.lower())
+
+            if _has_upper and _has_lower:
+                raise Exception(
+                    f"Duplicate method {_method} and {_method.lower()} in {_route}"
+                )
+            elif _has_upper:
+                app.add_api_route(_route, getattr(_mod, _method), methods=[_method])
+                print(f"PYTHON ENDPOINT: Registered {_method} {_route}")
+            elif _has_lower:
+                app.add_api_route(_route, getattr(_mod, _method.lower()), methods=[_method])
+                print(f"PYTHON ENDPOINT: Registered {_method} {_route}")
+
 
 @app.exception_handler(Exception)
 async def unicorn_exception_handler(request: Request, exc: Exception):
