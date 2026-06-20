@@ -13,9 +13,9 @@ jobs:
         with:
           node-version: v18.x
           registry-url: https://registry.npmjs.org/
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
       - name: Run dnt 🛠️ 
         run: deno task dnt
       - name: Publish package on NPM 📦
