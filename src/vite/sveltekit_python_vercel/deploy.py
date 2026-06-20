@@ -2,7 +2,15 @@ import glob
 import importlib
 import importlib.util
 import os
+import sys
 from pathlib import Path, PurePosixPath
+
+_base = Path(__file__).parent
+_deps = _base / "_deps"
+if _deps.exists() and str(_deps) not in sys.path:
+    sys.path.insert(0, str(_deps))
+if str(_base) not in sys.path:
+    sys.path.insert(0, str(_base))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
