@@ -1,4 +1,4 @@
-import {loadEnv, type Plugin} from "vite";
+import {type Plugin} from "vite";
 import {
   type ProcessPromise,
   $ as run$,
@@ -19,7 +19,7 @@ const get_pyServerEndpointAsString = (app_url: URL, serve = false) => `
         if (${serve}) {
           fullURL = new URL(url.pathname, new URL('${app_url}')) + url.search;
         } else {
-          fullURL = new URL('/api' + url.pathname, new URL('${app_url}')) + url.search;
+          fullURL = new URL('/api' + url.pathname, url.origin) + url.search;
         }
 
         console.log(\`PY: Reached python endpoint of \${method} \${fullURL}\`)
@@ -173,16 +173,10 @@ export async function sveltekit_python_vercel(
     name: "vite-plugin-sveltekit_python-server-endpoint",
     apply: "build",
     transform(src, id) {
-      // console.log("Transform function called for", id); // Add this line
       if (/\.py$/.test(id)) {
-        if (sveltekit_url === undefined)
-          throw new Error(
-            `${plugin_python_serve.name} failed to produce a sveltekit_url`
-          );
-
         return {
-          code: get_pyServerEndpointAsString(sveltekit_url, false),
-          map: null, // provide source map if available
+          code: get_pyServerEndpointAsString(new URL("http://localhost"), false),
+          map: null,
         };
       }
     },
