@@ -3,9 +3,14 @@ name: Publish
 on:
   release:
     types: [created]
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
-  publish:
+  publish-latest:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,10 +24,52 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Upgrade npm 📈
+      - name: Upgrade npm
         run: npm install -g npm@latest
-      - name: Run dnt 🛠️
+      - name: Run dnt
         run: deno run -A dnt.ts ${{ github.event.release.tag_name }}
-      - name: Publish package on NPM 📦
+      - name: Publish latest
         working-directory: ./npm
         run: npm publish --access public --tag latest
+
+  publish-beta:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org/
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+      - name: Compute version and npm tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          LATEST=$(npm view sveltekit-python-vercel version 2>/dev/null || echo "0.0.0")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "VERSION=${LATEST}-beta.pr${PR_NUMBER}.${SHORT_SHA}" >> "$GITHUB_ENV"
+            echo "NPM_TAG=pr-${PR_NUMBER}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${LATEST}-beta.${SHORT_SHA}" >> "$GITHUB_ENV"
+            echo "NPM_TAG=beta" >> "$GITHUB_ENV"
+          fi
+      - name: Run dnt
+        run: deno run -A dnt.ts "${{ env.VERSION }}"
+      - name: Publish beta
+        working-directory: ./npm
+        run: npm publish --access public --tag "${{ env.NPM_TAG }}"
