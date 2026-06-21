@@ -1,12 +1,17 @@
 import argparse
 import glob
-import importlib
 import importlib.util
 import shutil
-from pathlib import Path, PurePosixPath
+import sys
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+sys.path.insert(0, str(Path(__file__).parent))
+from load_runtime import run_load
+from routes import api_route, load_route, rel_path_from_routes, route_parent
 
 parser = argparse.ArgumentParser(description="Run Sveltekit Python Server")
 parser.add_argument("--host", default="0.0.0.0", help="Server hostname")
@@ -17,57 +22,68 @@ args = parser.parse_args()
 app = FastAPI()
 
 root_dir = Path(args.root).absolute()
-
 api_dir = Path("./sveltekit_python_vercel").absolute()
+routes_root = root_dir / "src/routes"
+watch_modules = []
 
-route_dir = root_dir.joinpath("src/routes")
 
-watch_modules = []  # list of modules to watch for changes
+def _copy_module(module_path: Path) -> Path:
+    api_route_path = api_dir.joinpath(module_path.relative_to(routes_root))
+    api_route_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(module_path, api_route_path.parent / api_route_path.name)
+    return api_route_path.parent / api_route_path.name
 
-for module_path in glob.glob(
-    route_dir.joinpath("**/+server.py").as_posix(), recursive=True
-):
-    abs_module_path = Path(module_path).absolute()
 
-    watch_modules.append(abs_module_path.parent.as_posix())
-
-    api_route = api_dir.joinpath(abs_module_path.relative_to(root_dir / "src/routes"))
-
-    if not api_route.parent.exists():
-        api_route.parent.mkdir(parents=True)
-
-    # copy module path to api_route
-    shutil.copy(module_path, api_route.parent)
-
-    module_name = api_route.stem
-
-    spec = importlib.util.spec_from_file_location(module_name, api_route)
+def _load_module(api_route_path: Path):
+    spec = importlib.util.spec_from_file_location(api_route_path.stem, api_route_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    return mod
 
-    # Get the relative path of the module from the API directory
-    rel_path = api_route.relative_to(api_dir)
 
-    # Convert the relative path to a string and remove the file extension
-    api_path = f"/{rel_path.parent}"
+def _make_load_handler(mod):
+    async def handler(request: Request):
+        payload = await request.json()
+        return JSONResponse(await run_load(mod, payload))
 
-    # Replace square brackets with curly brackets
-    api_path = api_path.replace("[", "{").replace("]", "}")
-    
-    # remove any groups from the URL
-    api_path = str(PurePosixPath(*[part for part in PurePosixPath(api_path).parts if not part.startswith("(") and not part.endswith(")")]))
+    return handler
 
-    # Add endpoints
+
+for module_path in glob.glob(routes_root.joinpath("**/+server.py").as_posix(), recursive=True):
+    abs_module_path = Path(module_path).absolute()
+    watch_modules.append(abs_module_path.parent.as_posix())
+
+    api_route_path = _copy_module(abs_module_path)
+    mod = _load_module(api_route_path)
+
+    rel = rel_path_from_routes(abs_module_path, routes_root)
+    api_path = api_route(rel.parent)
+
     for method in ["GET", "POST", "PATCH", "PUT", "DELETE"]:
-        # Check for duplicate methods
         if hasattr(mod, method) and hasattr(mod, method.lower()):
             raise Exception(
-                f"Duplicate method {method} and {method.lower()} in {api_route}"
+                f"Duplicate method {method} and {method.lower()} in {api_route_path}"
             )
         elif hasattr(mod, method):
             app.add_api_route(api_path, getattr(mod, method), methods=[method])
         elif hasattr(mod, method.lower()):
             app.add_api_route(api_path, getattr(mod, method.lower()), methods=[method])
+
+for pattern in ("**/+page.server.py", "**/+layout.server.py"):
+    for module_path in glob.glob(routes_root.joinpath(pattern).as_posix(), recursive=True):
+        abs_module_path = Path(module_path).absolute()
+        watch_modules.append(abs_module_path.parent.as_posix())
+
+        api_route_path = _copy_module(abs_module_path)
+        mod = _load_module(api_route_path)
+
+        if not hasattr(mod, "load"):
+            raise Exception(f"Missing load function in {abs_module_path}")
+
+        rel = rel_path_from_routes(abs_module_path, routes_root)
+        load_path = load_route(route_parent(rel))
+        app.add_api_route(load_path, _make_load_handler(mod), methods=["POST"])
+        print(f"PYTHON LOAD: Registered POST {load_path} ← {abs_module_path}")
 
 
 if __name__ == "__main__":
