@@ -23,7 +23,7 @@ func_dir.mkdir(parents=True, exist_ok=True)
 if args.packagedir:
     package_dir = Path(args.packagedir).absolute()
     shutil.copy(package_dir / "deploy.py", func_dir / "index.py")
-    for helper in ("load_runtime.py", "routes.py", "__init__.py"):
+    for helper in ("load_runtime.py", "routes.py"):
         src = package_dir / helper
         if src.exists():
             shutil.copy(src, func_dir / helper)
@@ -37,9 +37,6 @@ def _bundle_route_module(module_path: str, *, kind: str) -> None:
     target_dir = func_dir / route_parent(rel)
     target_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(abs_path, target_dir / rel.name)
-
-    if not (target_dir / "__init__.py").exists():
-        (target_dir / "__init__.py").touch()
 
     parent = route_parent(rel)
     if kind == "load":
