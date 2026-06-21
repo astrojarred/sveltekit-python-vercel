@@ -185,6 +185,28 @@ Available on `event`: `params`, `url`, `route`, `parent` (layout data), `data` (
 
 **Current limitations:** no `event.fetch`, `setHeaders`, `depends`, or page options (`prerender`, etc.) in `.py` files yet.
 
+## npm channels
+
+| Tag | When it updates | Install |
+|-----|-----------------|---------|
+| `latest` | GitHub Release created | `pnpm add -D sveltekit-python-vercel` |
+| `beta` | Every push to `main` | `pnpm add -D sveltekit-python-vercel@beta` |
+| `pr-<n>` | Open/update PR `#n` (same-repo only) | `pnpm add -D sveltekit-python-vercel@pr-15` |
+
+Beta versions look like `1.0.3-beta.abc1234` (main) or `1.0.3-beta.pr15.abc1234` (PRs).
+
+All publishes run through `.github/workflows/publish.yml` because npm trusted publishing only allows one workflow filename per package.
+
+### Developing the package locally
+
+If you work on this repo and a consumer app side by side (e.g. `test-skpv-deploy`):
+
+1. Build: `deno run -A dnt.ts $(npm view sveltekit-python-vercel version)` (or any version string)
+2. In the consumer: `pnpm add -D sveltekit-python-vercel@link:../sveltekit-python-vercel/npm`
+3. Rebuild and restart the consumer dev server after library changes
+
+Commit `^x.y.z` or `@beta` in the consumer for Vercel — `link:` only works on your machine.
+
 ## Fork of `sveltekit-modal`
 
 Check out the awesome [sveltekit-modal](https://github.com/semicognitive/sveltekit-modal) package by [@semicognitive](https://github.com/semicognitive), the original way to get your python code running in SvelteKit. Modal even has GPU support for running an entire ML stack within SvelteKit.

@@ -32,3 +32,8 @@ def resolve_route_path(template: str, params: dict) -> str:
     for key, value in params.items():
         path = path.replace(f"{{{key}}}", str(value))
     return path
+
+
+def route_registration_order(route: str) -> tuple:
+    """Static routes before dynamic; longer paths before shorter."""
+    return ("{" in route, -len(route), route)

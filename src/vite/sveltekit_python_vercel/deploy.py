@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from load_runtime import run_load
+from routes import route_registration_order
 
 app = FastAPI()
 
@@ -38,15 +39,19 @@ def _make_load_handler(mod):
 
 _manifest_path = _base / "_manifest.json"
 if _manifest_path.exists():
-    for _entry in json.loads(_manifest_path.read_text()):
+    _manifest = json.loads(_manifest_path.read_text())
+    _load_entries = [e for e in _manifest if e.get("kind") == "load"]
+    _server_entries = [e for e in _manifest if e.get("kind", "server") != "load"]
+
+    for _entry in sorted(_load_entries, key=lambda e: route_registration_order(e["route"])):
         _mod = _load_module(_base / _entry["file"])
         _route = _entry["route"]
-        _kind = _entry.get("kind", "server")
+        app.add_api_route(_route, _make_load_handler(_mod), methods=["POST"])
+        print(f"PYTHON LOAD: Registered POST {_route}")
 
-        if _kind == "load":
-            app.add_api_route(_route, _make_load_handler(_mod), methods=["POST"])
-            print(f"PYTHON LOAD: Registered POST {_route}")
-            continue
+    for _entry in _server_entries:
+        _mod = _load_module(_base / _entry["file"])
+        _route = _entry["route"]
 
         for _method in ["GET", "POST", "PATCH", "PUT", "DELETE"]:
             _has_upper = hasattr(_mod, _method)

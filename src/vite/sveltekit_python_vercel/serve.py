@@ -11,7 +11,13 @@ from fastapi.responses import JSONResponse
 
 sys.path.insert(0, str(Path(__file__).parent))
 from load_runtime import run_load
-from routes import api_route, load_route, rel_path_from_routes, route_parent
+from routes import (
+    api_route,
+    load_route,
+    rel_path_from_routes,
+    route_parent,
+    route_registration_order,
+)
 
 parser = argparse.ArgumentParser(description="Run Sveltekit Python Server")
 parser.add_argument("--host", default="0.0.0.0", help="Server hostname")
@@ -69,6 +75,7 @@ for module_path in glob.glob(routes_root.joinpath("**/+server.py").as_posix(), r
         elif hasattr(mod, method.lower()):
             app.add_api_route(api_path, getattr(mod, method.lower()), methods=[method])
 
+load_entries = []
 for pattern in ("**/+page.server.py", "**/+layout.server.py"):
     for module_path in glob.glob(routes_root.joinpath(pattern).as_posix(), recursive=True):
         abs_module_path = Path(module_path).absolute()
@@ -82,8 +89,13 @@ for pattern in ("**/+page.server.py", "**/+layout.server.py"):
 
         rel = rel_path_from_routes(abs_module_path, routes_root)
         load_path = load_route(route_parent(rel))
-        app.add_api_route(load_path, _make_load_handler(mod), methods=["POST"])
-        print(f"PYTHON LOAD: Registered POST {load_path} ← {abs_module_path}")
+        load_entries.append((load_path, mod, abs_module_path))
+
+for load_path, mod, abs_module_path in sorted(
+    load_entries, key=lambda entry: route_registration_order(entry[0])
+):
+    app.add_api_route(load_path, _make_load_handler(mod), methods=["POST"])
+    print(f"PYTHON LOAD: Registered POST {load_path} ← {abs_module_path}")
 
 
 if __name__ == "__main__":

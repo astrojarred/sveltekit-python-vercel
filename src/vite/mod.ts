@@ -17,7 +17,7 @@ const get_pyServerEndpointAsString = (app_url: URL, serve = false) => `
         let fullURL;
 
         if (${serve}) {
-          fullURL = new URL(url.pathname, new URL('${app_url}')) + url.search;
+          fullURL = new URL('/api' + url.pathname, new URL('${app_url}')) + url.search;
         } else {
           fullURL = new URL('/api' + url.pathname, url.origin) + url.search;
         }
