@@ -17,7 +17,7 @@ const get_pyServerEndpointAsString = (app_url: URL, serve = false) => `
         let fullURL;
 
         if (${serve}) {
-          fullURL = new URL(url.pathname, new URL('${app_url}')) + url.search;
+          fullURL = new URL('/api' + url.pathname, new URL('${app_url}')) + url.search;
         } else {
           fullURL = new URL('/api' + url.pathname, url.origin) + url.search;
         }
@@ -39,6 +39,84 @@ const get_pyServerEndpointAsString = (app_url: URL, serve = false) => `
     export const PUT = handle('PUT');
     export const DELETE = handle('DELETE');
 `;
+
+function getLoadRouteTemplate(id: string): string {
+  const marker = "/src/routes/";
+  const idx = id.indexOf(marker);
+  if (idx === -1) {
+    throw new Error(`Cannot derive load route from ${id}`);
+  }
+
+  let routePart = id.slice(idx + marker.length);
+  routePart = routePart.replace(/\/\+(?:page|layout)\.server\.py$/, "");
+
+  if (!routePart) {
+    return "/api/_load";
+  }
+
+  const segments = routePart
+    .split("/")
+    .filter((part) => !(part.startsWith("(") && part.endsWith(")")))
+    .map((part) => part.replace(/^\[(.+)\]$/, "{$1}"));
+
+  return `/api/_load/${segments.join("/")}`;
+}
+
+const get_pyLoadAsString = (
+  loadRouteTemplate: string,
+  app_url: URL,
+  serve = false
+) => `
+    import { error, redirect } from '@sveltejs/kit';
+
+    const LOAD_ROUTE_TEMPLATE = ${JSON.stringify(loadRouteTemplate)};
+
+    function buildLoadPath(params) {
+        let path = LOAD_ROUTE_TEMPLATE;
+        for (const [key, value] of Object.entries(params)) {
+            path = path.replaceAll(\`{\${key}}\`, encodeURIComponent(String(value)));
+        }
+        return path;
+    }
+
+    export async function load(event) {
+        const parent = event.parent ? await event.parent() : undefined;
+
+        const body = JSON.stringify({
+            params: event.params,
+            route: { id: event.route.id },
+            url: event.url.href,
+            parent,
+            data: event.data ?? undefined,
+            cookies: Object.fromEntries(event.cookies.getAll().map((c) => [c.name, c.value])),
+        });
+
+        const apiPath = buildLoadPath(event.params);
+        const fullURL = ${serve}
+            ? new URL(apiPath, new URL('${app_url}'))
+            : new URL(apiPath, event.url.origin);
+
+        const res = await event.fetch(fullURL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body,
+        });
+
+        const result = await res.json();
+
+        if (result.type === 'redirect') redirect(result.status, result.location);
+        if (result.type === 'error') error(result.status, result.body);
+        return result.data;
+    }
+`;
+
+function isPyServerFile(id: string): boolean {
+  return /\+server\.py$/.test(id);
+}
+
+function isPyLoadFile(id: string): boolean {
+  return /\+(?:page|layout)\.server\.py$/.test(id);
+}
 
 export interface SveltekitPythonOptions {
   python_path?: string;
@@ -74,8 +152,6 @@ export async function sveltekit_python_vercel(
         "esm/src/vite"
       );
 
-      // copy asll +server.py files to package directory
-
       run$.verbose = false;
       run$.env.PYTHONDONTWRITEBYTECODE = "1";
 
@@ -91,11 +167,10 @@ export async function sveltekit_python_vercel(
 
       cd$(config.root);
 
-      // local_process.quiet();  // let it be loud for now
       local_process.nothrow();
 
       local_process.stderr.on("data", (s) => {
-        console.log(s.toString().trimEnd()); //Logs stderr always and all of stdout if 'log': True
+        console.log(s.toString().trimEnd());
       });
       local_process.stderr.on("error", (s) => {
         console.error(chalk.red("Error: Python Serve Failed"));
@@ -117,22 +192,41 @@ export async function sveltekit_python_vercel(
     },
   };
 
+  const transformPyFile = (
+    id: string,
+    serve: boolean,
+    app_url: URL
+  ): {code: string; map: null} | undefined => {
+    if (!/\.py$/.test(id)) return undefined;
+
+    if (isPyServerFile(id)) {
+      return {
+        code: get_pyServerEndpointAsString(app_url, serve),
+        map: null,
+      };
+    }
+
+    if (isPyLoadFile(id)) {
+      const loadRouteTemplate = getLoadRouteTemplate(id);
+      return {
+        code: get_pyLoadAsString(loadRouteTemplate, app_url, serve),
+        map: null,
+      };
+    }
+
+    return undefined;
+  };
+
   const plugin_py_server_endpoint_serve: Plugin = {
     name: "vite-plugin-sveltekit_python-server-endpoint",
     apply: "serve",
     transform(src, id) {
-      // console.log("Transform function called for", id); // Add this line
-      if (/\.py$/.test(id)) {
-        if (sveltekit_url === undefined)
-          throw new Error(
-            `${plugin_python_serve.name} failed to produce a sveltekit_url`
-          );
-
-        return {
-          code: get_pyServerEndpointAsString(sveltekit_url, true),
-          map: null, // provide source map if available
-        };
+      if (sveltekit_url === undefined) {
+        throw new Error(
+          `${plugin_python_serve.name} failed to produce a sveltekit_url`
+        );
       }
+      return transformPyFile(id, true, sveltekit_url);
     },
   };
 
@@ -140,12 +234,7 @@ export async function sveltekit_python_vercel(
     name: "vite-plugin-sveltekit_python-server-endpoint",
     apply: "build",
     transform(src, id) {
-      if (/\.py$/.test(id)) {
-        return {
-          code: get_pyServerEndpointAsString(new URL("http://localhost"), false),
-          map: null,
-        };
-      }
+      return transformPyFile(id, false, new URL("http://localhost"));
     },
   };
 

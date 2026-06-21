@@ -16,6 +16,9 @@ if str(_base) not in sys.path:
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from load_runtime import run_load
+from routes import route_registration_order
+
 app = FastAPI()
 
 
@@ -26,9 +29,27 @@ def _load_module(file_path: Path):
     return mod
 
 
+def _make_load_handler(mod):
+    async def handler(request: Request):
+        payload = await request.json()
+        return JSONResponse(await run_load(mod, payload))
+
+    return handler
+
+
 _manifest_path = _base / "_manifest.json"
 if _manifest_path.exists():
-    for _entry in json.loads(_manifest_path.read_text()):
+    _manifest = json.loads(_manifest_path.read_text())
+    _load_entries = [e for e in _manifest if e.get("kind") == "load"]
+    _server_entries = [e for e in _manifest if e.get("kind", "server") != "load"]
+
+    for _entry in sorted(_load_entries, key=lambda e: route_registration_order(e["route"])):
+        _mod = _load_module(_base / _entry["file"])
+        _route = _entry["route"]
+        app.add_api_route(_route, _make_load_handler(_mod), methods=["POST"])
+        print(f"PYTHON LOAD: Registered POST {_route}")
+
+    for _entry in _server_entries:
         _mod = _load_module(_base / _entry["file"])
         _route = _entry["route"]
 
@@ -90,12 +111,10 @@ async def _dispatch(scope: dict, body: bytes) -> tuple[int, dict, bytes]:
 def handler(event, context):
     payload = json.loads(event.get("body") or "{}")
 
-    # parse the path and query string
     parsed = urlsplit(payload.get("path", "/"))
     path = parsed.path or "/"
     query = (parsed.query or "").encode()
 
-    # Build ASGI-style header list
     raw_headers: dict = payload.get("headers") or {}
     headers_list = []
     host = payload.get("host", "localhost")
