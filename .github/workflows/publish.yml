@@ -22,7 +22,7 @@ jobs:
       - name: Upgrade npm 📈
         run: npm install -g npm@latest
       - name: Run dnt 🛠️
-        run: deno task dnt
+        run: deno run -A dnt.ts ${{ github.event.release.tag_name }}
       - name: Publish package on NPM 📦
         working-directory: ./npm
-        run: npm publish --access public
+        run: npm publish --access public --tag latest
